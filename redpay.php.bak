@@ -1,0 +1,516 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) exit; // 
+/*
+ * Plugin Name: RedPay Payment Gateway
+ * Plugin URI: https://redpay.mx
+ * Description: Take credit card payments on your store.
+ * Author: RedPay
+ * Author URI: https://somosredcompanies.com/
+ * Version: 1.0.0
+ *
+ */
+/*
+ * Esta acci�n registra nuestro Plugin
+ */
+add_filter('woocommerce_payment_gateways', 'add_gateway_redpay');
+function add_gateway_redpay($gateways)
+{
+    $gateways[] = 'WC_RedPay_Gateway'; // Nombre de la Clase
+    return $gateways;
+}
+
+/*
+ * La clase se autoregistra y sus acciones
+ */
+add_action('plugins_loaded', 'init_gateway_redpay');
+
+function init_gateway_redpay()
+{
+    
+    class WC_RedPay_Gateway extends WC_Payment_Gateway
+    {
+        
+		function redpay_scripts() {
+			wp_enqueue_script( 'imask-js', plugins_url('imask.js', __FILE__), false );
+		}
+		function redpay_scripts_inline() {
+			echo '<style>
+.blockUIblockOverlay {
+  z-index: -1;
+}
+.blockOverlay {
+  display:none !important;
+}
+	
+			</style>
+				<script>
+
+				var element = document.getElementById("redpay_expdate");
+                  var mask = IMask(element, {
+                  mask: "MM\/YY",
+                  blocks: {
+                    YY: {
+                      mask: IMask.MaskedRange,
+                      from: 20,
+                      to: 35
+                    },
+
+                    MM: {
+                      mask: IMask.MaskedRange,
+                      from: 1,
+                      to: 12
+                    }
+                  }
+                });
+                
+                 var element = document.getElementById("redpay_ccNo");
+                  var dispatchMask = IMask(element, {
+                    mask: [
+                      {
+                        mask: "0000\ 0000\ 0000\ 0000",
+                        regex: /^(?:4[0-9]{12}(?:[0-9]{3})?)$/,
+                        startsWith: "4",
+                        cardType: "001"
+                      },
+                      {
+                        mask: "0000\ 0000\ 0000\ 0000",
+                        regex: /^(?:5[1-5][0-9]{14})$/,
+                        startsWith: "5",
+                        cardType: "002"
+                      },
+                      {
+                        mask: "0000\ 000000\ 00000",
+                        regex: /^(?:3[47][0-9]{13})$/,
+                        startsWith: "3",
+                        cardType: "003"
+                      }
+                    ],
+                    dispatch: function (appended, dynamicMasked) {
+                      var number = (dynamicMasked.value + appended).substring(0, 1);
+                      var cardType = jQuery("#redpay_type").val()== null?"":jQuery("#redpay_type").val();
+                      return dynamicMasked.compiledMasks.find(function (m) {
+                        return number == m.startsWith && cardType.split("-")[0] == m.cardType;
+                      });
+                    }
+                  }
+                  )
+                
+                  var element = document.getElementById("redpay_cvv");
+                  var dispatchMask = IMask(element, {
+                    mask: [
+                      {
+                        mask: "000",
+                        cardType: "001"
+                      },
+                      {
+                        mask: "000",
+                        cardType: "002"
+                      },
+                      {
+                        mask: "0000",
+                        cardType: "003"
+                      }
+                    ],
+                    dispatch: function (appended, dynamicMasked) {
+                      var cardType = jQuery("#redpay_type").val()== null?"":jQuery("#redpay_type").val();
+                      return dynamicMasked.compiledMasks.find(function (m) {
+                        return cardType.split("-")[0] == m.cardType;
+                      });
+                    }
+                  }
+                  )
+                  
+                  try {
+                    jQuery("#redpay_type").selectWoo();
+                  } catch (ex) {
+                  }
+                
+                  jQuery("#redpay_type").on("change", function () {
+                    var placeHolderCard = "";
+                    var placeHolderCvv = "";
+                    jQuery("#redpay_ccNo").val("");
+                    jQuery("#redpay_cvv").val("");
+                    if (this.value.split("-")[0] == "001" || this.value.split("-")[0] == "002") {
+                      placeHolderCard = "XXXX-XXXX-XXXX-XXXX";
+                      placeHolderCvv = "XXX";
+                    } else if (this.value.split("-")[0] == "003") {
+                      placeHolderCard = "XXXX-XXXXXX-XXXXX";
+                      placeHolderCvv = "XXXX";
+                    }
+                    jQuery("#redpay_ccNo").attr("placeholder", placeHolderCard);
+                    jQuery("#redpay_cvv").attr("placeholder", placeHolderCvv);
+                  });
+	            </script>';
+		}
+
+        /**
+         * Constructor de la clase
+         */
+        public function __construct()
+        {
+            
+            $this->id                 = 'redpay'; // ID del Plugin
+            $this->icon               = plugins_url('redpay_1.png', __FILE__); // URL del icono que se muestra cerca del PlugIn
+            $this->has_fields         = true; // Indica que tiene un formulario este gateway
+            $this->method_title       = 'RedPay Gateway';
+            $this->method_description = 'Description of RedPay payment gateway'; // Texto que aparece en las opciones del administrador
+            
+            // Gateways puede soportar subscriptions, refunds, saved payment methods,
+            $this->supports = array(
+                'products'
+            );
+            
+            // M�todo con los campos del formulario
+            $this->init_form_fields();
+            
+            // Carga los ajustes (Settings)
+            $this->init_settings();
+            $this->title       = $this->get_option('title');
+			if ($this->get_option('title')){
+			}else{
+				$this->title = $this->form_fields['title']['default'];
+			}
+            $this->description = $this->get_option('description');
+            $this->enabled     = $this->get_option('enabled');
+			$this->production  = $this->get_option('production');
+            $this->apiKey      = $this->get_option('ApiKey');
+            $this->password    = $this->get_option('Password');
+            
+            // Acciones soportadas por el PlugIn
+			add_action( 'wp_enqueue_scripts', array( $this, 'redpay_scripts' ) );
+			add_action( 'wp_enqueue_scripts_inline', array( $this, 'redpay_scripts_inline' ) );
+            add_action('woocommerce_api_wc_gateway_' . $this->id, array(
+                $this,
+                'check_redpay_response'
+            ));
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array(
+                $this,
+                'process_admin_options'
+            ));
+            
+            // Checa si tiene datos en el CallBack del sistema de pagos
+            if (isset($_POST["ResponseCode"])) {
+            $this->check_redpay_response();
+	    exit;
+	    }
+            
+        }
+        
+        function check_redpay_response()
+        {
+            if (isset($_POST["ResponseCode"])) {
+                if ($_POST["ResponseCode"] == "002") {
+                    $order = wc_get_order($_POST["ReferenceNumber"]);
+                    
+                    // Completa la orden
+                    $order->payment_complete();
+                    wc_reduce_stock_levels($_POST["ReferenceNumber"]);
+                    
+                    // Vacia el carrito
+                    WC()->cart->empty_cart();
+                    
+                    // Redirige a Gracias
+                    wp_redirect($this->get_return_url($order));
+                } else {
+                    wp_redirect(wc_get_checkout_url());
+                }
+                exit();
+            }
+        }
+        
+        
+        /**
+         * Plugin Opciones
+         */
+        public function init_form_fields()
+        {
+            
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title' => 'Habilitar/Deshabilitar',
+                    'label' => 'Habilitar RedPay Gateway',
+                    'type' => 'checkbox',
+                    'description' => '',
+                    'default' => 'no'
+                ),
+                'production' => array(
+                    'title' => 'Producci&oacute;n',
+                    'label' => 'Habilita el ambiente de producci&oacute;n de RedPay',
+                    'type' => 'checkbox',
+                    'description' => '',
+                    'default' => 'no'
+                ),
+                'title' => array(
+                    'title' => 'T&iacute;tulo',
+                    'type' => 'text',
+                    'description' => 'T&iacute;tulo que se presenta en la pasarela de pagos',
+                    'default' => 'Red Pay',
+                    'desc_tip' => true
+                ),
+                'description' => array(
+                    'title' => 'Descripci&oacute;n',
+                    'type' => 'textarea',
+                    'description' => 'Descripci&oacute;n que se presenta en la pasarela de pagos',
+                    'default' => 'Empleamos los m&aacute;s altos est&aacute;ndares de seguridad (SSL, 3D Secure) para proteger su informaci&oacute;n personal y la de tu tarjeta. Revise al pie de su p&aacute;gina el s&iacute;mbolo del condado (SSL) que garantiza la autenticidad de la p&aacute;gina.'
+                ),
+                'ApiKey' => array(
+                    'title' => 'ApiKey:',
+                    'type' => 'text'
+                ),
+                'Password' => array(
+                    'title' => 'Password',
+                    'type' => 'password'
+                )
+            );
+            
+        }
+        
+        /**
+         * Construye el formulario de pagos
+         */
+        public function payment_fields()
+        {
+        // API URL
+			if ('no' === $this->production){
+				$url = 'https://appredpayapiclientmxdev.azurewebsites.net/api/Pay/CardTypes';
+			}else{
+				$url = 'https://api.redpayonline.com/api/Pay/CardTypes';
+			}
+            
+            $args = array(
+                'timeout' => 45,
+                'redirection' => 5,
+                'httpversion' => '1.0',
+                'blocking' => true,
+                'sslverify' 	=> false,
+                'headers'     => array(
+                    "Authorization" => " Basic " . base64_encode($this->apiKey . ':' . $this->password)
+                 )
+            );
+
+            $response = wp_remote_get($url, $args);
+            $body = (array)json_decode($response["body"]);
+            
+            if ($this->description) {
+                // Descripci�n antes del formulario
+                echo wpautop(wp_kses_post($this->description));
+            }else{
+				echo wpautop(wp_kses_post($this->form_fields['description']['default']));
+			}
+            
+            echo '<fieldset id="wc-' . esc_attr($this->id) . '-cc-form" class="" style="background:transparent;">';
+            
+            // Acci�n que se ejecuta en el submit
+            do_action('woocommerce_credit_card_form_start', $this->id);
+
+            echo '<p class=""><label for="redpay_type">M&#xE9;todo de pago<span class="required">*</span></label>
+			<span class="woocommerce-input-wrapper">
+                <select id="redpay_type" name="redpay_type" style="width:100%">
+                <option value selected>Elige tu opci&#xF3;n</option>';
+            foreach($body as $item)//warning generated here
+            {
+                if($item->text == 'American Express'){
+                    $isAmex = true;
+                }
+               echo '<option value="' . $item->value . '">' . $item->text . '</option>';
+            }
+            echo '</select>
+				</span>
+                </p>
+                <p class=""><label for="redpay_ccNo">N&#xFA;mero de tarjeta<span class="required">*</span></label>
+				<span class="woocommerce-input-wrapper">
+                <input style="width:100%" id="redpay_ccNo" name="redpay_ccNo" type="text" autocomplete="off">
+				</span>
+                </p>
+                
+                <p class="">
+                    <label for="redpay_expdate">Fecha de Vencimiento <span class="required">*</span></label>
+					<span class="woocommerce-input-wrapper">
+                    <input style="width:100%" id="redpay_expdate" name="redpay_expdate" type="text" placeholder="MM / YY">
+					</span>
+                </p>
+                
+                <p class="">
+                    <label for="redpay_cvv">C&#xF3;digo de Seguridad (CVC) <span class="required">*</span></label>
+					<span class="woocommerce-input-wrapper">
+                    <input style="width:100%" id="redpay_cvv" name="redpay_cvv" type="password" autocomplete="off">
+					</span>
+                </p> 
+
+                <p class="">
+                <img src="'.plugins_url('visa-and-mastercard-logo.png', __FILE__).'" style="height:50px;max-width:auto; margin: 0 .25rem" />';
+                if($isAmex == true){
+                    echo '<img src="'.plugins_url('amex.png', __FILE__).'" style="height:50px;max-width:auto; margin: 0 .25rem" />';
+                }
+                echo '<img src="'.plugins_url('red-pay-logo.png', __FILE__).'"  style="height:50px;max-width:auto; margin: 0 .25rem"  /></p>
+                <div class="clear"></div>';
+            
+            do_action('woocommerce_credit_card_form_end', $this->id);
+            
+            echo '<div class="clear"></div></fieldset>';
+            
+			 do_action('wp_enqueue_scripts_inline');
+            
+        }
+        
+        /*
+         * JS y CSS Personalizados
+         */
+        public function payment_scripts()
+        {
+            
+            if (!is_cart() && !is_checkout() && !isset($_GET['pay_for_order'])) {
+                return;
+            }
+            
+            // Checa si esta deshabilitado el PlugIn
+            if ('no' === $this->enabled) {
+                return;
+            }
+            
+            // Si no esta el apiKey y el password no realiza nada
+            if (empty($this->apiKey) || empty($this->password)) {
+                return;
+            }
+            
+        }
+        
+        /*
+         * Mensaje de datos de tarjeta requeridos
+         */
+        public function validate_fields()
+        {
+            
+            if (empty($_POST['redpay_type'])) {
+                wc_add_notice('&#xA1;M&#xE9;todo de pago es requerido!', 'error');
+                return false;
+            }
+            if (empty($_POST['redpay_ccNo'])) {
+                wc_add_notice('&#xA1;N&#xFA;mero de tarjeta es requerido!', 'error');
+                return false;
+            }
+            if (empty($_POST['redpay_expdate'])) {
+                wc_add_notice('&#xA1;Fecha de vencimiento es requerido!', 'error');
+                return false;
+            }
+            if (empty($_POST['redpay_cvv'])) {
+                wc_add_notice('&#xA1;C&#xF3;digo de Seguridad(CVC) es requerido!', 'error');
+                return false;
+            }
+            
+            return true;
+            
+            
+        }
+        
+        /*    
+         * Procesa el pago
+         */
+        public function process_payment($order_id)
+        {
+            
+            global $woocommerce;
+            
+            // Obtiene el detalle de la orden
+            $order = wc_get_order($order_id);
+            
+            
+            // API URL
+			if ('no' === $this->production){
+				$url = 'https://appredpayapiclientmxdev.azurewebsites.net/api/auth/Authenticate';
+			}else{
+				$url = 'https://api.redpayonline.com/api/auth/Authenticate';
+			}
+            
+            $data = array(
+                "UserId" => $this->apiKey,
+                "Password" => $this->password
+            );
+            $payload = json_encode($data);
+
+            // Llamada HTTP Api
+			$args = array(
+				'body' => $payload,
+				'timeout' => 45,
+				'redirection' => 5,
+				'httpversion' => '1.0',
+				'blocking' => true,
+	            'sslverify' 	=> false,
+				'headers'     => array(
+					"Content-Type" => "application/json"
+				 ),
+				 'cookies' => array()
+			);
+				
+			$response = wp_remote_post($url, $args );
+
+            $body = (array)json_decode($response["body"]);
+            
+            if ($body["message"] == 'Success') {
+			// API URL
+				if ('no' === $this->production){
+					$url = 'https://appredpayapiclientmxdev.azurewebsites.net/api/Pay/Create';
+				}else{
+					$url = 'https://api.redpayonline.com/api/Pay/Create';
+				}
+                
+                // Llamada HTTP Api
+                $pieces    = explode("/",  sanitize_text_field($_POST['redpay_expdate']));
+                $expire_mm = $pieces[0];
+                $expire_yy = '20' . $pieces[1];
+                
+                $data    = array(
+                    "IdPaymentMethod" => $idPaymentMethod,
+                    "ReferenceNumber" => str_pad($order_id, 10, '0', STR_PAD_LEFT),
+                    "CardType" =>  sanitize_text_field($_POST['redpay_type']),
+                    "cardNumber" => sanitize_text_field($_POST['redpay_ccNo']),
+                    "cardExpirationMonth" => $expire_mm,
+                    "cardExpirationYear" => $expire_yy,
+                    "cvv" =>sanitize_text_field( $_POST['redpay_cvv']),
+                    "Amount" => (float) $order->total,
+                    "Currency" => $order->currency,
+                    "FirstName" => $order->billing_first_name,
+                    "LastName" => $order->billing_last_name,
+                    "Email" => $order->billing_email,
+                    "PhoneNumber" => $order->billing_phone,
+					"Street" => $order->billing_address_1,
+					"Street2Col"=> $order->billing_address_2,
+					"Street2Del"=> $order->billing_city,
+					"City"=> $order->billing_city,
+					"State"=> $order->billing_state,
+					"Country"=> $order->billing_country,
+					"PostalCode"=> $order->billing_postcode
+                );
+                $payload = json_encode($data);
+
+				$args = array(
+					'body'        => $payload,
+					'timeout' => 45,
+					'redirection' => 5,
+					'httpversion' => '1.0',
+					'blocking' => true,
+					'sslverify' 	=> false,
+					'headers'     => array(
+						"Content-Type" => "application/json",
+						"Authorization" => " Bearer " . $body["token"]
+					 )
+				);
+				
+				$response = wp_remote_post($url, $args );
+
+                $body = (array)json_decode($response["body"]);
+                
+                // Redirige a Gracias
+                return array(
+                    'result' => 'success',
+                    'redirect' => plugins_url('3dsecure.html', __FILE__) . '?redir=' . $body["urlRedirect"] . "&data=" . json_encode($body["response"]) //$this->get_return_url( $order )
+                );
+
+            } else {
+                wc_add_notice($body["message"], 'error');
+                return;
+            }
+            
+        }
+    }
+} 

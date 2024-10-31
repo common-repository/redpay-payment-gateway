@@ -1,0 +1,18 @@
+
+<form method="POST" id="frmReadPay">
+
+</form>
+<script type="text/javascript">
+const queryString = window.location.search;
+console.log(queryString);
+const urlParams = new URLSearchParams(queryString);
+document.getElementById('frmReadPay').action = urlParams.get('redir');
+var jsonData=JSON.parse(urlParams.get('data'));
+html='';
+Object.keys(jsonData).forEach(function(key) {
+    var value = jsonData[key];
+    html+='<input type="hidden" name="'+key+'" value="'+value+'"/>';
+});
+document.getElementById('frmReadPay').innerHTML = html;
+document.getElementById('frmReadPay').submit();
+</script>

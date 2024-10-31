@@ -1,0 +1,7 @@
+POST:{"APIKey":"d4496327-cab7-495d-b47e-7e1150fe5a20","ReferenceNumber":"0000000043","Currency":"MXN","Amount":"4194","TransactionNumber":"24878","ResponseCode":"002","Status":"Accepted","PaymentMethodId":"11","UrlRedirect":"https:\/\/zavaletazea.dev\/dev-redpay\/wp-content\/plugins\/redpay_deploy_1.5\/payment_success.php?id=24878","Date":"1\/1\/190012:00:00AM+00:00","AuthCode":"","Response":"{\\\"APIKey\\\":\\\"d4496327-cab7-495d-b47e-7e1150fe5a20\\\",\\\"ReferenceNumber\\\":\\\"0000000043\\\",\\\"Amount\\\":4194.0,\\\"TransactionNumber\\\":24878,\\\"ResponseCode\\\":\\\"002\\\",\\\"Status\\\":null,\\\"TransactionCode\\\":\\\"21880cc1-2d3c-4\\\",\\\"Email\\\":\\\"rzavaleta@casystem.com.mx\\\"}","TransactionCode":"21880cc1-2d3c-4","Email":"rzavaleta@casystem.com.mx"}
+
+
+GET:{"id":"24878"}
+
+
+RESPONSE:{"response_code":200,"message":"payment_complete"}
